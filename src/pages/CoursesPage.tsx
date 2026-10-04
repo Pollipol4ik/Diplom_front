@@ -213,7 +213,7 @@ export const CoursesPage: React.FC = () => {
                                                             <span className="flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 border border-blue-200">Вводный</span>
                                                         )}
                                                         {isLagging && (
-                                                            <span className="flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 border border-amber-200">Для отстающих</span>
+                                                            <span className="flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 border border-amber-200">Корректирующий</span>
                                                         )}
                                                         {!isIntro && !isLagging && (
                                                             <span className="flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-700 border border-emerald-200">Целевой</span>

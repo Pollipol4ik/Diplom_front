@@ -381,10 +381,11 @@ export const coursesApi = {
     setLessonCriteria: (lessonId: number, criteria: Array<{ name: string; description?: string; max_points: number }>) =>
         api.put<GradingCriterionResponse[]>(`/courses/lessons/${lessonId}/criteria`, criteria),
 
-    gradeSubmission: (submissionId: number, grades: CriterionScoreInput[], reviewerComment?: string) =>
+    gradeSubmission: (submissionId: number, grades: CriterionScoreInput[], reviewerComment?: string, status?: string) =>
         api.post<LessonSubmissionResponse>(`/courses/submissions/${submissionId}/grade`, {
             grades,
             reviewer_comment: reviewerComment,
+            new_status: status,
         }),
 
     getSubmissionGrades: (submissionId: number) =>

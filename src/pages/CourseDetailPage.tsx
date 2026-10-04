@@ -61,7 +61,7 @@ export const CourseDetailPage: React.FC = () => {
   const [hearingPointsTotal, setHearingPointsTotal] = useState(0);
   /** Кол-во принятых этапов слушаний (для прогресса) */
   const [hearingAcceptedCount, setHearingAcceptedCount] = useState(0);
-   const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     if (!courseId) return;
     setLoading(true);
     try {
@@ -507,13 +507,19 @@ const HearingGroupReviewCard: React.FC<{
   groupLabel: string;
   groupDescription?: string | null;
   membersLine: string;
+  criteria?: GradingCriterionResponse[];
   onSend: (submissionId: number, comment: string, grade: number | null, status: string) => Promise<void>;
-}> = ({ sub, groupLabel, membersLine, onSend }) => {
+}> = ({ sub, groupLabel, membersLine, criteria = [], onSend }) => {
   const [comment, setComment] = useState('');
   const [grade, setGrade] = useState(5);
+  const [criteriaScores, setCriteriaScores] = useState<Record<number, number>>({});
   const [status, setStatus] = useState('ACCEPTED');
   const [sending, setSending] = useState(false);
   const accepted = sub.status === 'ACCEPTED';
+  const hasCriteria = criteria.length > 0;
+
+  const totalCriteriaScore = Object.values(criteriaScores).reduce((s, v) => s + v, 0);
+  const maxCriteriaScore = criteria.reduce((s, c) => s + c.max_points, 0);
 
   return (
       <div className="border border-border rounded-xl p-4 space-y-3">
@@ -550,23 +556,62 @@ const HearingGroupReviewCard: React.FC<{
                   ))}
             </div>
         )}
-        <div className="space-y-2 pt-2 border-t border-border">
+        <div className="space-y-3 pt-2 border-t border-border">
+          {!accepted && hasCriteria && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-2">Оценка по критериям</p>
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {criteria.map(c => {
+                    const pts = criteriaScores[c.id] ?? 0;
+                    return (
+                        <div key={c.id} className="flex items-center gap-3 p-2.5 bg-muted/40 rounded-xl border border-border">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-foreground">{c.order_number}. {c.name}</p>
+                            {c.description && <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{c.description}</p>}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <input
+                                type="range"
+                                min={0}
+                                max={c.max_points}
+                                value={pts}
+                                onChange={e => setCriteriaScores(prev => ({ ...prev, [c.id]: Number(e.target.value) }))}
+                                className="w-20 accent-primary"
+                            />
+                            <span className="text-xs font-bold w-12 text-center rounded-lg py-0.5 text-primary bg-primary/10 border border-primary/20">
+                              {pts}/{c.max_points}
+                            </span>
+                          </div>
+                        </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 flex items-center justify-between px-3 py-1.5 bg-primary/5 rounded-xl border border-primary/20">
+                  <span className="text-xs font-semibold text-primary">Итого</span>
+                  <span className="text-sm font-bold text-primary">{totalCriteriaScore}/{maxCriteriaScore}</span>
+                </div>
+              </div>
+          )}
           <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} placeholder="Комментарий..." className="w-full border border-border rounded-lg px-3 py-2 text-sm resize-none bg-background focus:ring-2 focus:ring-primary outline-none" />
           {!accepted && (
               <div className="flex items-center gap-3 flex-wrap">
-                <label className="text-xs text-muted-foreground shrink-0">Оценка:</label>
-                <input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={Number.isFinite(grade) ? grade : 5}
-                    onChange={e => {
-                      const v = Number(e.target.value);
-                      if (!Number.isFinite(v)) return;
-                      setGrade(v);
-                    }}
-                    className="w-16 border border-border rounded-lg px-2 py-1.5 text-sm bg-background focus:ring-2 focus:ring-primary outline-none"
-                />
+                {!hasCriteria && (
+                    <>
+                      <label className="text-xs text-muted-foreground shrink-0">Оценка:</label>
+                      <input
+                          type="number"
+                          min={1}
+                          max={10}
+                          value={Number.isFinite(grade) ? grade : 5}
+                          onChange={e => {
+                            const v = Number(e.target.value);
+                            if (!Number.isFinite(v)) return;
+                            setGrade(v);
+                          }}
+                          className="w-16 border border-border rounded-lg px-2 py-1.5 text-sm bg-background focus:ring-2 focus:ring-primary outline-none"
+                      />
+                    </>
+                )}
                 <select value={status} onChange={e => setStatus(e.target.value)} className="border border-border rounded-lg px-2 py-1.5 text-sm bg-background focus:ring-2 focus:ring-primary outline-none">
                   <option value="ACCEPTED">Принято</option>
                   <option value="NEEDS_REVISION">На доработку</option>
@@ -581,11 +626,12 @@ const HearingGroupReviewCard: React.FC<{
                 setSending(true);
                 try {
                   if (!accepted) {
-                    if (!Number.isFinite(grade) || grade < 1 || grade > 10) {
+                    const finalGrade = hasCriteria ? totalCriteriaScore : grade;
+                    if (!hasCriteria && (!Number.isFinite(grade) || grade < 1 || grade > 10)) {
                       toast.error('Оценка должна быть от 1 до 10');
                       return;
                     }
-                    await onSend(sub.id, comment, grade, status);
+                    await onSend(sub.id, comment, finalGrade, status);
                   } else {
                     await onSend(sub.id, comment, null, 'ACCEPTED');
                   }
@@ -1457,6 +1503,16 @@ const HearingsTab: React.FC<HearingsTabProps> = ({ courseId, lessons, isModerato
                           <div className="flex-1 min-w-0">
                             <span className={`text-sm font-medium truncate block ${isActive ? 'text-primary' : 'text-foreground'}`}>{hl.title}</span>
                             {hl.hearing_stage && <span className="text-[10px] text-muted-foreground">{HEARING_STAGE_LABELS[hl.hearing_stage] ?? hl.hearing_stage}</span>}
+                            {hl.submission_deadline && (() => {
+                              const dl = new Date(hl.submission_deadline.includes('T') ? hl.submission_deadline : hl.submission_deadline.replace(' ', 'T'));
+                              const passed = Date.now() > dl.getTime();
+                              const done2 = studentHearingSubs.get(hl.id)?.status === 'ACCEPTED' || studentSubmissions.get(hl.id)?.status === 'ACCEPTED';
+                              return (
+                                  <span className={`text-[10px] font-medium ${passed && !done2 ? 'text-destructive' : 'text-amber-600 dark:text-amber-400'}`}>
+                                  {passed && !done2 ? '⏰ Истёк' : `⏰ до ${dl.toLocaleDateString('ru', { day: '2-digit', month: '2-digit' })} ${dl.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}`}
+                                </span>
+                              );
+                            })()}
                           </div>
                           {locked && <Lock className="size-3.5 text-amber-600 shrink-0" aria-hidden />}
                         </button>
@@ -1479,8 +1535,24 @@ const HearingsTab: React.FC<HearingsTabProps> = ({ courseId, lessons, isModerato
                           <span className="text-xs text-muted-foreground px-2 py-1 bg-muted rounded-lg">Макс. {activeHearing.max_score ?? 100} баллов</span>
                         </div>
                         {activeHearing.practice_description && (
-                            <p className="text-sm text-muted-foreground whitespace-pre-wrap mb-3">{activeHearing.practice_description}</p>
+                            <p className="text-sm text-muted-foreground whitespace-pre-line mb-3">
+                              {activeHearing.practice_description}
+                            </p>
                         )}
+                        {activeHearing.submission_deadline && (() => {
+                          const dl = new Date(activeHearing.submission_deadline.includes('T') ? activeHearing.submission_deadline : activeHearing.submission_deadline.replace(' ', 'T'));
+                          const passed = Date.now() > dl.getTime();
+                          const isAccepted = activeHearingSub?.status === 'ACCEPTED';
+                          return (
+                              <div className={`rounded-xl px-3 py-2 mb-2 text-xs border flex items-center gap-2 ${passed && !isAccepted ? 'bg-destructive/10 border-destructive/30 text-destructive' : 'bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-200'}`}>
+                                <span className="shrink-0">⏰</span>
+                                {passed && !isAccepted
+                                    ? 'Срок сдачи истёк'
+                                    : <>Срок сдачи: {dl.toLocaleString('ru', { dateStyle: 'short', timeStyle: 'short' })}</>
+                                }
+                              </div>
+                          );
+                        })()}
                         {activeCriteria.length > 0 && (
                             <div className="border-t border-border pt-3">
                               <p className="text-xs font-semibold text-muted-foreground mb-2">Критерии оценивания:</p>
@@ -1696,6 +1768,7 @@ const HearingsTab: React.FC<HearingsTabProps> = ({ courseId, lessons, isModerato
                                           groupLabel={selectedGroup?.title ?? `Группа #${selected.group_id}`}
                                           groupDescription={selectedGroup?.description}
                                           membersLine={(selectedGroup?.members.map(m => `${m.last_name ?? ''} ${m.first_name ?? ''}`.trim()).filter(Boolean).join(', ') ?? '')}
+                                          criteria={activeCriteria}
                                           onSend={handleReview}
                                       />
                                     </div>

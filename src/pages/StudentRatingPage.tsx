@@ -25,7 +25,6 @@ export const StudentRatingPage: React.FC = () => {
   const [classes, setClasses] = useState<SchoolClassResponse[]>([]);
   const [selectedClass, setSelectedClass] = useState<number | ''>('');
 
-  // Поиск по ученикам
   const [studentSearch, setStudentSearch] = useState('');
 
   const [students, setStudents] = useState<StudentRatingResponse[]>([]);
@@ -34,7 +33,6 @@ export const StudentRatingPage: React.FC = () => {
   const [totalStudents, setTotalStudents] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Transfer modal state
   const [transferStudent, setTransferStudent] = useState<StudentRatingResponse | null>(null);
   const [bulkTransferIds, setBulkTransferIds] = useState<Set<number>>(new Set());
   const [bulkTransferOpen, setBulkTransferOpen] = useState(false);
@@ -47,10 +45,10 @@ export const StudentRatingPage: React.FC = () => {
   const [allCoursesMap, setAllCoursesMap] = useState<Map<number, string>>(new Map());
   const [coursesPopup, setCoursesPopup] = useState<{ studentId: number; names: string[]; courseIds: number[] } | null>(null);
   const [forcedCoursesMap, setForcedCoursesMap] = useState<Map<number, Set<number>>>(new Map());
+
   useEffect(() => {
     if (!isModerator) { toast.error('Недостаточно прав'); navigate('/'); return; }
 
-    // Для модератора загружаем только школы доступных ему курсов
     const loadAllCoursesMap = async () => {
       try {
         const res = await coursesApi.adminGetAll(0, 500);
@@ -73,7 +71,6 @@ export const StudentRatingPage: React.FC = () => {
         if (schoolSet.size > 0) {
           setSchools(Array.from(schoolSet.values()));
         } else {
-          // Fallback: admin или нет курсов — все школы
           const all = await schoolsApi.getAll();
           setSchools(all.data);
         }
@@ -94,7 +91,6 @@ export const StudentRatingPage: React.FC = () => {
     }
   }, [selectedSchool]);
 
-  // When search is active, fetch all students (page_size=500) to search across all pages
   const fetchData = useCallback(async (p = 0) => {
     setLoading(true);
     try {
@@ -109,7 +105,6 @@ export const StudentRatingPage: React.FC = () => {
       const studentsData = res.data.content;
       setStudents(studentsData);
 
-      // Заполняем карту принудительных назначений
       const newForcedMap = new Map<number, Set<number>>();
       studentsData.forEach(s => {
         if (s.forced_course_ids && s.forced_course_ids.length > 0) {
@@ -126,9 +121,8 @@ export const StudentRatingPage: React.FC = () => {
 
   useEffect(() => { fetchData(0); }, [fetchData]);
 
-  // Debounce search: when user stops typing, re-fetch with search mode
   useEffect(() => {
-    if (!studentSearch.trim()) return; // handled by fetchData dep change above
+    if (!studentSearch.trim()) return;
     const timer = setTimeout(() => { fetchData(0); }, 400);
     return () => clearTimeout(timer);
   }, [studentSearch]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -138,7 +132,6 @@ export const StudentRatingPage: React.FC = () => {
     return parts.length ? parts.join(' ') : s.nickname;
   };
 
-  // Фильтрация учеников по поиску
   const filteredStudents = useMemo(() => {
     if (!studentSearch.trim()) return students;
     const query = studentSearch.toLowerCase().trim();
@@ -153,6 +146,12 @@ export const StudentRatingPage: React.FC = () => {
           className.includes(query);
     });
   }, [students, studentSearch]);
+
+  // Общий балл = курс + проект (все баллы)
+  const getTotalRating = (s: StudentRatingResponse): number | undefined => {
+    if (s.course_rating == null && s.project_rating == null) return undefined;
+    return (s.course_rating ?? 0) + (s.project_rating ?? 0);
+  };
 
   const ratingBadge = (val?: number) => {
     if (val == null) return <span className="text-muted-foreground">—</span>;
@@ -185,8 +184,6 @@ export const StudentRatingPage: React.FC = () => {
     );
   };
 
-  // Open transfer modal: load courses
-
   const loadCourses = async (student?: StudentRatingResponse) => {
     setCoursesLoading(true);
     try {
@@ -200,7 +197,6 @@ export const StudentRatingPage: React.FC = () => {
 
       let target: CourseShortResponse[] = [];
 
-      // ✅ Если ученик отстающий - показываем только курсы для отстающих
       if (student?.is_lagging) {
         target = all.filter(c =>
             c.for_lagging_students === true &&
@@ -208,7 +204,6 @@ export const StudentRatingPage: React.FC = () => {
             !alreadyEnrolledIds.has(c.id)
         );
       } else {
-        // Обычный ученик - только целевые курсы (не вводные, не для отстающих)
         target = all.filter(c =>
             !c.for_lagging_students &&
             !c.is_introduction &&
@@ -216,7 +211,6 @@ export const StudentRatingPage: React.FC = () => {
         );
       }
 
-      // Если знаем школу ученика — фильтруем только курсы этой школы
       if (student?.school_name && target.length > 0) {
         const schoolFiltered = target.filter(c =>
             c.schools?.some(s => s.name === student.school_name)
@@ -244,7 +238,6 @@ export const StudentRatingPage: React.FC = () => {
   const openBulkTransferModal = async () => {
     setBulkTransferOpen(true);
     setSelectedCourseId('');
-    // Для массового переноса берём первого выбранного ученика для фильтра по школе
     const firstId = Array.from(bulkTransferIds)[0];
     const firstStudent = students.find(s => s.account_id === firstId);
     await loadCourses(firstStudent);
@@ -282,7 +275,6 @@ export const StudentRatingPage: React.FC = () => {
     fetchData(page);
   };
 
-  // Сброс поиска и выбора при смене вкладки
   useEffect(() => {
     setStudentSearch('');
     setBulkTransferIds(new Set());
@@ -338,9 +330,8 @@ export const StudentRatingPage: React.FC = () => {
           )}
         </div>
 
-        {/* Фильтры: школа, поиск по ученикам, класс */}
+        {/* Фильтры */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
-          {/* Фильтр по школам */}
           <div className="relative md:col-span-1">
             <School className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <select
@@ -358,7 +349,6 @@ export const StudentRatingPage: React.FC = () => {
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
           </div>
 
-          {/* Поиск по ученикам */}
           <div className="relative md:col-span-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <input
@@ -378,7 +368,6 @@ export const StudentRatingPage: React.FC = () => {
             )}
           </div>
 
-          {/* Фильтр по классам (только для вкладки рейтинг) */}
           {tab === 'rating' && (
               <div className="relative md:col-span-1">
                 <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -397,7 +386,6 @@ export const StudentRatingPage: React.FC = () => {
           )}
         </div>
 
-        {/* Результаты поиска */}
         {studentSearch && filteredStudents.length !== students.length && filteredStudents.length > 0 && (
             <div className="mb-3 text-sm text-muted-foreground">
               Найдено: {filteredStudents.length} из {students.length} учеников
@@ -422,182 +410,164 @@ export const StudentRatingPage: React.FC = () => {
                 <table className="w-full text-sm">
                   <thead>
                   <tr className="border-b border-border bg-muted/40">
-                    {(
-                        <th className="px-3 py-3 w-8">
-                          <input
-                              type="checkbox"
-                              checked={filteredStudents.length > 0 && filteredStudents.every(s => bulkTransferIds.has(s.account_id))}
-                              onChange={e => {
-                                if (e.target.checked) setBulkTransferIds(prev => new Set(Array.from(prev).concat(filteredStudents.map(s => s.account_id))));
-                                else setBulkTransferIds(prev => { const n = new Set(Array.from(prev)); filteredStudents.forEach(s => n.delete(s.account_id)); return n; });
-                              }}
-                              className="rounded"
-                          />
-                        </th>
-                    )}
+                    <th className="px-3 py-3 w-8">
+                      <input
+                          type="checkbox"
+                          checked={filteredStudents.length > 0 && filteredStudents.every(s => bulkTransferIds.has(s.account_id))}
+                          onChange={e => {
+                            if (e.target.checked) setBulkTransferIds(prev => new Set(Array.from(prev).concat(filteredStudents.map(s => s.account_id))));
+                            else setBulkTransferIds(prev => { const n = new Set(Array.from(prev)); filteredStudents.forEach(s => n.delete(s.account_id)); return n; });
+                          }}
+                          className="rounded"
+                      />
+                    </th>
                     <th className="px-4 py-3 text-left font-medium text-muted-foreground">Ученик</th>
                     <th className="px-3 py-3 text-left font-medium text-muted-foreground">Школа</th>
                     <th className="px-3 py-3 text-left font-medium text-muted-foreground">Класс</th>
                     <th className="px-3 py-3 text-center font-medium text-muted-foreground">Курсы</th>
-                    <th className="px-3 py-3 text-center font-medium text-muted-foreground">Проекты</th>
-                    <th className="px-3 py-3 text-center font-medium text-muted-foreground">Общий</th>
+                    <th className="px-3 py-3 text-center font-medium text-muted-foreground">Общий балл</th>
                     <th className="px-3 py-3 text-center font-medium text-muted-foreground">Статус</th>
-                    {(
-                        <th className="px-3 py-3 text-center font-medium text-muted-foreground">Действия</th>
-                    )}
+                    <th className="px-3 py-3 text-center font-medium text-muted-foreground">Действия</th>
                   </tr>
                   </thead>
                   <tbody>
-                  {filteredStudents.map(s => (
-                      <tr key={s.account_id} onClick={() => { navigate(`/profile/${s.nickname}`); setCoursesPopup(null); }} className={`relative border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer ${bulkTransferIds.has(s.account_id) ? 'bg-primary/5' : ''}`}>
-                        {(
-                            <td className="px-3 py-3 w-8" onClick={e => e.stopPropagation()}>
-                              <input
-                                  type="checkbox"
-                                  checked={bulkTransferIds.has(s.account_id)}
-                                  onChange={e => {
-                                    setBulkTransferIds(prev => {
-                                      const n = new Set(prev);
-                                      if (e.target.checked) n.add(s.account_id); else n.delete(s.account_id);
-                                      return n;
-                                    });
-                                  }}
-                                  className="rounded"
-                              />
-                            </td>
-                        )}
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-foreground">{studentName(s)}</p>
-                          <p className="text-xs text-muted-foreground">@{s.nickname}</p>
-                        </td>
-                        <td className="px-3 py-3 text-muted-foreground">{s.school_name ?? '—'}</td>
-                        <td className="px-3 py-3 text-muted-foreground">{s.class_name ?? '—'}</td>
-                        <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
-                          {(() => {
-                            const groupIds: number[] = s.enrolled_course_ids ?? [];
-                            const forcedIdsSet: Set<number> | undefined = forcedCoursesMap.get(s.account_id);
-
-                            const allCourseIds: number[] = [...groupIds];
-                            if (forcedIdsSet) {
-                              forcedIdsSet.forEach(id => {
-                                if (!allCourseIds.includes(id)) {
-                                  allCourseIds.push(id);
-                                }
-                              });
-                            }
-
-                            if (allCourseIds.length > 0) {
-                              return (
-                                  <button
-                                      type="button"
-                                      onClick={() => {
-                                        const names = allCourseIds.map(id => allCoursesMap.get(id) ?? `Курс #${id}`);
-                                        setCoursesPopup({ studentId: s.account_id, names, courseIds: allCourseIds });
-                                      }}
-                                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15 transition-colors"
-                                  >
-                                    <BookOpen className="size-3" />
-                                    {allCourseIds.length}
-                                  </button>
-                              );
-                            }
-                            return <span className="text-muted-foreground text-xs">—</span>;
-                          })()}
-                          {coursesPopup?.studentId === s.account_id && (
-                              <div className="absolute z-50 mt-1 w-72 bg-card border border-border rounded-xl shadow-lg p-3 text-left">
-                                <p className="text-xs font-semibold text-muted-foreground mb-2">Курсы ученика</p>
-                                <ul className="space-y-1 mb-2">
-                                  {coursesPopup.names.map((name, idx) => {
-                                    const courseId = coursesPopup.courseIds[idx];
-                                    const isForced = courseId ? (forcedCoursesMap.get(s.account_id)?.has(courseId) ?? false) : false;
-                                    return (
-                                        <li key={idx} className="flex items-center justify-between text-xs text-foreground leading-snug">
-                                          <span>• {name}</span>
-                                          {isForced && courseId && (
-                                              <button
-                                                  onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    try {
-                                                      await studentsApi.unassignFromCourse(s.account_id, courseId);
-                                                      toast.success(`Откреплён от курса "${name}"`);
-                                                      setForcedCoursesMap(prev => {
-                                                        const newMap = new Map(prev);
-                                                        const courseSet = newMap.get(s.account_id);
-                                                        if (courseSet) {
-                                                          courseSet.delete(courseId);
-                                                          if (courseSet.size === 0) {
-                                                            newMap.delete(s.account_id);
-                                                          } else {
-                                                            newMap.set(s.account_id, courseSet);
+                  {filteredStudents.map(s => {
+                    const totalRating = getTotalRating(s);
+                    return (
+                        <tr key={s.account_id} onClick={() => { navigate(`/profile/${s.nickname}`); setCoursesPopup(null); }} className={`relative border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer ${bulkTransferIds.has(s.account_id) ? 'bg-primary/5' : ''}`}>
+                          <td className="px-3 py-3 w-8" onClick={e => e.stopPropagation()}>
+                            <input
+                                type="checkbox"
+                                checked={bulkTransferIds.has(s.account_id)}
+                                onChange={e => {
+                                  setBulkTransferIds(prev => {
+                                    const n = new Set(prev);
+                                    if (e.target.checked) n.add(s.account_id); else n.delete(s.account_id);
+                                    return n;
+                                  });
+                                }}
+                                className="rounded"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-foreground">{studentName(s)}</p>
+                            <p className="text-xs text-muted-foreground">@{s.nickname}</p>
+                          </td>
+                          <td className="px-3 py-3 text-muted-foreground">{s.school_name ?? '—'}</td>
+                          <td className="px-3 py-3 text-muted-foreground">{s.class_name ?? '—'}</td>
+                          <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                            {(() => {
+                              const groupIds: number[] = s.enrolled_course_ids ?? [];
+                              const forcedIdsSet: Set<number> | undefined = forcedCoursesMap.get(s.account_id);
+                              const allCourseIds: number[] = [...groupIds];
+                              if (forcedIdsSet) {
+                                forcedIdsSet.forEach(id => {
+                                  if (!allCourseIds.includes(id)) allCourseIds.push(id);
+                                });
+                              }
+                              if (allCourseIds.length > 0) {
+                                return (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                          const names = allCourseIds.map(id => allCoursesMap.get(id) ?? `Курс #${id}`);
+                                          setCoursesPopup({ studentId: s.account_id, names, courseIds: allCourseIds });
+                                        }}
+                                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15 transition-colors"
+                                    >
+                                      <BookOpen className="size-3" />
+                                      {allCourseIds.length}
+                                    </button>
+                                );
+                              }
+                              return <span className="text-muted-foreground text-xs">—</span>;
+                            })()}
+                            {coursesPopup?.studentId === s.account_id && (
+                                <div className="absolute z-50 mt-1 w-72 bg-card border border-border rounded-xl shadow-lg p-3 text-left">
+                                  <p className="text-xs font-semibold text-muted-foreground mb-2">Курсы ученика</p>
+                                  <ul className="space-y-1 mb-2">
+                                    {coursesPopup.names.map((name, idx) => {
+                                      const courseId = coursesPopup.courseIds[idx];
+                                      const isForced = courseId ? (forcedCoursesMap.get(s.account_id)?.has(courseId) ?? false) : false;
+                                      return (
+                                          <li key={idx} className="flex items-center justify-between text-xs text-foreground leading-snug">
+                                            <span>• {name}</span>
+                                            {isForced && courseId && (
+                                                <button
+                                                    onClick={async (e) => {
+                                                      e.stopPropagation();
+                                                      try {
+                                                        await studentsApi.unassignFromCourse(s.account_id, courseId);
+                                                        toast.success(`Откреплён от курса "${name}"`);
+                                                        setForcedCoursesMap(prev => {
+                                                          const newMap = new Map(prev);
+                                                          const courseSet = newMap.get(s.account_id);
+                                                          if (courseSet) {
+                                                            courseSet.delete(courseId);
+                                                            if (courseSet.size === 0) newMap.delete(s.account_id);
+                                                            else newMap.set(s.account_id, courseSet);
                                                           }
-                                                        }
-                                                        return newMap;
-                                                      });
-                                                      fetchData(page);
-                                                    } catch {
-                                                      toast.error('Ошибка открепления');
-                                                    }
-                                                  }}
-                                                  className="text-red-500 hover:text-red-700 text-[10px] px-1.5 py-0.5 rounded border border-red-200 hover:bg-red-50 transition-colors"
-                                              >
-                                                Открепить
-                                              </button>
-                                          )}
-                                        </li>
-                                    );
-                                  })}
-                                </ul>
-                              </div>
-                          )}
-                        </td>
-
-                        <td className="px-3 py-3 text-center">{ratingBadgeInteractive(s.project_rating, s.project_rating_work, 'Работа по проекту (слушания)')}</td>
-                        <td className="px-3 py-3 text-center">{ratingBadgeInteractive(s.course_rating, s.course_rating_work, 'Работа по курсу (уроки)')}</td>
-                        <td className="px-3 py-3 text-center">{ratingBadge(s.combined_rating)}</td>
-                        <td className="px-3 py-3 text-center">
-                          {s.is_lagging ? (
-                              <div className="flex items-center gap-1.5">
-                                <span className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-red-50 text-red-600 border border-red-200">
-                                  Отстающий
+                                                          return newMap;
+                                                        });
+                                                        fetchData(page);
+                                                      } catch { toast.error('Ошибка открепления'); }
+                                                    }}
+                                                    className="text-red-500 hover:text-red-700 text-[10px] px-1.5 py-0.5 rounded border border-red-200 hover:bg-red-50 transition-colors"
+                                                >
+                                                  Открепить
+                                                </button>
+                                            )}
+                                          </li>
+                                      );
+                                    })}
+                                  </ul>
+                                </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-center">{ratingBadge(totalRating)}</td>
+                          <td className="px-3 py-3 text-center">
+                            {s.is_lagging ? (
+                                <div className="flex items-center gap-1.5 justify-center">
+                                  <span className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-red-50 text-red-600 border border-red-200">
+                                    Отстающий
+                                  </span>
+                                  <button
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        try {
+                                          await studentsApi.unmarkLagging(s.account_id);
+                                          toast.success('Флаг отстающего снят');
+                                          fetchData(page);
+                                        } catch { toast.error('Ошибка'); }
+                                      }}
+                                      className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground hover:bg-muted/80 border border-border transition-colors"
+                                      title="Снять отметку отстающего"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                            ) : (
+                                <span className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200">
+                                  В норме
                                 </span>
-                                <button
-                                    onClick={async (e) => {
-                                      e.stopPropagation();
-                                      try {
-                                        await studentsApi.unmarkLagging(s.account_id);
-                                        toast.success('Флаг отстающего снят');
-                                        fetchData(page);
-                                      } catch { toast.error('Ошибка'); }
-                                    }}
-                                    className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground hover:bg-muted/80 border border-border transition-colors"
-                                    title="Снять отметку отстающего"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                          ) : (
-                              <span className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200">
-                                В норме
-                              </span>
-                          )}
-                        </td>
-                        {(
-                            <td className="px-3 py-3 text-center">
-                              <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openTransferModal(s);
-                                  }}
-                                  className="flex items-center gap-1 px-2.5 py-1.5 bg-primary/10 text-primary text-xs font-semibold rounded-lg hover:bg-primary/15 transition-colors border border-primary/20"
-                                  title="Перевести на целевой курс"
-                              >
-                                <ArrowRightLeft className="size-3" />
-                                Перевести
-                              </button>
-                            </td>
-                        )}
-                      </tr>
-                  ))}
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openTransferModal(s);
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1.5 bg-primary/10 text-primary text-xs font-semibold rounded-lg hover:bg-primary/15 transition-colors border border-primary/20"
+                                title="Перевести на целевой курс"
+                            >
+                              <ArrowRightLeft className="size-3" />
+                              Перевести
+                            </button>
+                          </td>
+                        </tr>
+                    );
+                  })}
                   </tbody>
                 </table>
               </div>
@@ -609,7 +579,6 @@ export const StudentRatingPage: React.FC = () => {
               </div>
           )}
         </div>
-
         {/* Модальное окно с работой */}
         {workModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setWorkModal(null)}>

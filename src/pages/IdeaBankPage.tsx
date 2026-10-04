@@ -80,11 +80,26 @@ export const IdeaBankPage: React.FC = () => {
   }, [assignIdea?.id, assignCourseId]);
 
   useEffect(() => {
-    if (!groupSchoolId) { setSchoolStudents([]); return; }
-    accountsApi.getBySchool(Number(groupSchoolId), 0, 500)
-        .then(r => setSchoolStudents((r.data?.content ?? []).map((s: any) => ({ id: s.id, nickname: s.nickname, first_name: s.first_name, last_name: s.last_name }))))
+    if (!groupSchoolId || !assignCourseId) { setSchoolStudents([]); return; }
+    // Загружаем только зачисленных на курс учеников из выбранной школы
+    coursesApi.getCourseSummary(Number(assignCourseId))
+        .then(r => {
+          const allEnrolled = (r.data?.students ?? []).map((s: any) => ({
+            id: s.account_id,
+            nickname: s.nickname,
+            first_name: s.first_name,
+            last_name: s.last_name,
+          }));
+          // Дополнительно фильтруем по выбранной школе через getBySchool для получения school_id
+          accountsApi.getBySchool(Number(groupSchoolId), 0, 500)
+              .then(sr => {
+                const schoolIds = new Set((sr.data?.content ?? []).map((s: any) => s.id));
+                setSchoolStudents(allEnrolled.filter(s => schoolIds.has(s.id)));
+              })
+              .catch(() => setSchoolStudents(allEnrolled));
+        })
         .catch(() => setSchoolStudents([]));
-  }, [groupSchoolId]);
+  }, [groupSchoolId, assignCourseId]);
 
   const handleAssignToGroup = async (groupId: number) => {
     if (!assignIdea) return;

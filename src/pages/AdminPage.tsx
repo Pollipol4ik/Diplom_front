@@ -1937,11 +1937,16 @@ export const CoursesTab: React.FC = () => {
                 deadline_local: apiDeadlineToDatetimeLocal(lesson.submission_deadline),
             });
             const existing = lessonCriteriaMap.get(lesson.id) ?? [];
+            // Если урок — CONFERENCE_DEFENSE и критериев ещё нет — подставляем 12 стандартных
+            const confDefault = lesson.hearing_stage === 'CONFERENCE_DEFENSE' && existing.length === 0
+                ? ([{"name": "Актуальность выбранной проблемы", "description": "Актуальность и значимость выбранной проблемы, наличие вариантов эффективного решения.", "max_points": 3}, {"name": "Логичность и полнота представленных материалов", "description": "Содержательность, информативность, глубина проработки темы, логическая завершённость.", "max_points": 4}, {"name": "Практическая реализуемость работы", "description": "Результаты работы имеют практическое значение и могут быть применены.", "max_points": 6}, {"name": "Внедрение в практику", "description": "Степень внедрения: наличие опытного образца, рабочей модели, апробация на целевой аудитории.", "max_points": 5}, {"name": "Обоснование использованных методов", "description": "Обоснование выбора методов исследования, технологий, применения современного оборудования.", "max_points": 3}, {"name": "Применение практических навыков", "description": "Изобретательность, техническая сложность, оригинальность, завершённость, качество выполнения.", "max_points": 5}, {"name": "Самостоятельность выполнения работы", "description": "Соответствие уровня материала уровню понимания на защите. Личный вклад участников.", "max_points": 4}, {"name": "Умение аргументировать заключения и выводы", "description": "Аргументированность выводов, опора на факты и теоретическую базу.", "max_points": 4}, {"name": "Умение отвечать на вопросы", "description": "Чёткость и обоснованность ответов с использованием принятой терминологии.", "max_points": 4}, {"name": "Культура публичного выступления", "description": "Логика, грамотность изложения, ораторское мастерство, эмоциональность, внешний вид.", "max_points": 3}, {"name": "Качество презентационных материалов", "description": "Аккуратность, эстетика оформления, отсутствие грамматических ошибок.", "max_points": 3}, {"name": "Наличие отзыва вуза/предприятия-партнёра", "description": "Наличие отзыва, указывающего на полученный результат и дальнейшее развитие работы.", "max_points": 1}] as Array<{name:string;description:string;max_points:number}>)
+                : null;
             setLessonCriteriaFormInline(
                 existing.length > 0
                     ? existing.map(c => ({ name: c.name, description: c.description ?? '', max_points: c.max_points }))
-                    : []
+                    : confDefault ?? []
             );
+            if (confDefault) setLessonForm(f => ({ ...f, max_score: 45 }));
         } else {
             setEditingLesson(null);
             setLessonForm({

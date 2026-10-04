@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Users, UserCheck, FileStack, School, Loader2 } from 'lucide-react';
-import { coursesApi, type CourseLessonResponse, type LessonSubmissionResponse } from '../api/courses';
+import { coursesApi, type CourseLessonResponse, type LessonSubmissionResponse, type HearingSubmissionResponse } from '../api/courses';
 import { toast } from 'sonner';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -23,6 +23,7 @@ export const ModeratorCourseStats: React.FC<ModeratorCourseStatsProps> = ({ cour
   const [loading, setLoading] = useState(true);
   const [studentCount, setStudentCount] = useState<number | null>(null);
   const [submissions, setSubmissions] = useState<LessonSubmissionResponse[]>([]);
+  const [hearingSubsByLesson, setHearingSubsByLesson] = useState<Map<number, HearingSubmissionResponse[]>>(new Map());
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -42,14 +43,30 @@ export const ModeratorCourseStats: React.FC<ModeratorCourseStatsProps> = ({ cour
         page++;
       } while (page < totalPages);
       setSubmissions(all);
+
+      // Загружаем hearing submissions для всех hearing-уроков
+      const hearingLessons = lessons.filter(l => l.category === 'HEARING');
+      const hearingMap = new Map<number, HearingSubmissionResponse[]>();
+      await Promise.all(
+          hearingLessons.map(async (l) => {
+            try {
+              const r = await coursesApi.getHearingSubmissions(l.id);
+              hearingMap.set(l.id, r.data ?? []);
+            } catch {
+              hearingMap.set(l.id, []);
+            }
+          }),
+      );
+      setHearingSubsByLesson(hearingMap);
     } catch {
       toast.error('Не удалось загрузить статистику курса');
       setStudentCount(null);
       setSubmissions([]);
+      setHearingSubsByLesson(new Map());
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, lessons]);
 
   useEffect(() => {
     loadAll();
@@ -89,6 +106,22 @@ export const ModeratorCourseStats: React.FC<ModeratorCourseStatsProps> = ({ cour
     }
     perLesson[s.lesson_id].count += 1;
   });
+
+  // Добавляем hearing submissions в статистику по урокам
+  if (!isIntroduction) {
+    hearingSubsByLesson.forEach((subs, lessonId) => {
+      if (!perLesson[lessonId]) {
+        const lesson = lessons.find(l => l.id === lessonId);
+        if (lesson) {
+          perLesson[lessonId] = { title: lesson.title, count: 0, order: lesson.order_number };
+        }
+      }
+      if (perLesson[lessonId]) {
+        perLesson[lessonId].count += subs.length;
+      }
+    });
+  }
+
   const barData = Object.entries(perLesson)
       .map(([, v]) => ({
         name:

@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import { coursesApi, type CourseShortResponse, type CourseLessonResponse, type GradingCriterionResponse, type HearingSubmissionResponse } from '../app/api/courses';
 import { courseGroupsApi, type CourseGroupResponse } from '../app/api/courseGroups';
-import { filesApi } from '../app/api/files';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -18,8 +17,11 @@ interface DefenseRow {
     members: string;
     school: string;
     submission_id: number | null;
+    /** grades — баллы по критериям (criterion_id -> points) */
     grades: Record<number, number | null>;
     total: number | null;
+    /** Оценка по ревью (если нужен отдельный балл помимо суммы критериев) */
+    reviewGrade: number | null;
 }
 
 export const AdminCourseWorksPage: React.FC = () => {
@@ -66,48 +68,89 @@ export const AdminCourseWorksPage: React.FC = () => {
                 courseGroupsApi.getGroups(Number(courseId)),
                 coursesApi.getHearingSubmissions(lesson.id),
             ]);
+
             const crit: GradingCriterionResponse[] = criteriaRes.data ?? [];
             setDefenseCriteria(crit);
+
             const groups: CourseGroupResponse[] = groupsRes.data ?? [];
             const subs: HearingSubmissionResponse[] = subsRes.data ?? [];
+
+            // Создаём карту: group_id -> hearing_submission
             const subByGroup = new Map<number, HearingSubmissionResponse>(subs.map(s => [s.group_id, s]));
-            const gradesMap = new Map<number, Record<number, number | null>>();
-            await Promise.all(subs.map(async sub => {
-                try {
-                    const g = await coursesApi.getSubmissionGrades(sub.id);
-                    const m: Record<number, number | null> = {};
-                    (g.data ?? []).forEach((gr: any) => { m[gr.criterion_id] = gr.points; });
-                    gradesMap.set(sub.id, m);
-                } catch { gradesMap.set(sub.id, {}); }
-            }));
+
+            // Для каждой группы извлекаем оценки из ревью
             const rows: DefenseRow[] = groups.map(g => {
                 const sub = subByGroup.get(g.id);
-                const grades = sub ? (gradesMap.get(sub.id) ?? {}) : {};
-                const members = (g.members ?? []).map(m => [m.last_name, m.first_name].filter(Boolean).join(' ') || m.nickname).join(', ');
-                const total = sub && Object.keys(grades).length > 0
-                    ? Object.values(grades).reduce<number>((a, v) => a + ((v as number) ?? 0), 0)
-                    : null;
-                return { group_id: g.id, group_title: g.title, members, school: g.school_name ?? '—', submission_id: sub?.id ?? null, grades, total };
+
+                // Инициализируем пустые оценки по критериям
+                const grades: Record<number, number | null> = {};
+                crit.forEach(c => { grades[c.id] = null; });
+
+                let reviewGrade: number | null = null;
+                let total: number | null = null;
+
+                if (sub && sub.reviews && sub.reviews.length > 0) {
+                    // Берём последнюю (актуальную) рецензию
+                    const latestReview = [...sub.reviews].sort(
+                        (a, b) => new Date(b.reviewed_at).getTime() - new Date(a.reviewed_at).getTime()
+                    )[0];
+
+                    reviewGrade = latestReview.grade ?? null;
+
+                    // Если в ревью есть grade — это сумма баллов по критериям
+                    // Для распределения по отдельным критериям нужны детальные данные
+                    // В текущей модели hearing_review хранит только суммарный grade
+                    // TODO: если нужно распределение по критериям, нужно расширить модель
+                    if (reviewGrade !== null) {
+                        total = reviewGrade;
+                    }
+                }
+
+                const members = (g.members ?? [])
+                    .map(m => [m.last_name, m.first_name].filter(Boolean).join(' ') || m.nickname)
+                    .join(', ');
+
+                return {
+                    group_id: g.id,
+                    group_title: g.title,
+                    members,
+                    school: g.school_name ?? '—',
+                    submission_id: sub?.id ?? null,
+                    grades,
+                    total,
+                    reviewGrade,
+                };
             }).sort((a, b) => (b.total ?? -1) - (a.total ?? -1));
+
             setDefenseRows(rows);
-        } catch (e: any) { toast.error(e.response?.data?.message ?? 'Ошибка загрузки данных защиты'); }
-        finally { setDefenseLoading(false); }
+        } catch (e: any) {
+            toast.error(e.response?.data?.message ?? 'Ошибка загрузки данных защиты');
+        } finally {
+            setDefenseLoading(false);
+        }
     };
 
     const exportXlsx = () => {
         if (!course || defenseRows.length === 0) return;
-        const headers = ['Тема / Группа', 'Участники (ФИО)', 'Школа',
-            ...defenseCriteria.map((c, i) => `К${i+1}. ${c.name} (0-${c.max_points})`), 'Итого'];
-        const data = defenseRows.map(r => [r.group_title, r.members, r.school,
-            ...defenseCriteria.map(c => r.grades[c.id] ?? ''), r.total ?? '']);
+        const headers = ['Тема / Группа', 'Участники (ФИО)', 'Школа', 'Статус',
+            ...defenseCriteria.map((c, i) => `К${i+1}. ${c.name} (0-${c.max_points})`), 'Итого баллов'];
+        const data = defenseRows.map(r => [
+            r.group_title,
+            r.members,
+            r.school,
+            r.submission_id ? (r.total !== null ? 'Проверено' : 'Сдано') : 'Не сдано',
+            ...defenseCriteria.map(c => r.grades[c.id] ?? ''),
+            r.total ?? ''
+        ]);
         const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
-        ws['!cols'] = [{wch:40},{wch:36},{wch:22},...defenseCriteria.map(()=>({wch:16})),{wch:10}];
+        ws['!cols'] = [{wch:40},{wch:36},{wch:22},{wch:12},...defenseCriteria.map(()=>({wch:16})),{wch:12}];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Защита проекта');
         XLSX.writeFile(wb, `Итоги_защиты_${course.name.replace(/[^а-яА-ЯёЁa-zA-Z0-9]/g,'_')}.xlsx`);
     };
 
     const maxTotal = defenseCriteria.reduce((s, c) => s + c.max_points, 0);
+    const reviewedCount = defenseRows.filter(r => r.total !== null).length;
 
     const filtered = useMemo(() => {
         if (!defenseSearch.trim()) return defenseRows;
@@ -179,9 +222,14 @@ export const AdminCourseWorksPage: React.FC = () => {
                             >
                                 <div className="flex items-center justify-between mb-3">
                                     <h2 className="text-sm font-bold text-foreground">Критерии оценивания</h2>
-                                    <span className="text-xs bg-blue-50 text-blue-700 font-semibold px-2.5 py-1 rounded-full border border-blue-100">
-                                        Максимум: {maxTotal} баллов
-                                    </span>
+                                    <div className="flex gap-2 text-xs">
+                                        <span className="bg-blue-50 text-blue-700 font-semibold px-2.5 py-1 rounded-full border border-blue-100">
+                                            Максимум: {maxTotal} баллов
+                                        </span>
+                                        <span className="bg-emerald-50 text-emerald-700 font-semibold px-2.5 py-1 rounded-full border border-emerald-100">
+                                            Проверено: {reviewedCount} / {defenseRows.length}
+                                        </span>
+                                    </div>
                                 </div>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
                                     {defenseCriteria.map((c, i) => (
@@ -212,10 +260,9 @@ export const AdminCourseWorksPage: React.FC = () => {
                             <Users className="size-4" />
                             <span>Групп: <b className="text-foreground">{filtered.length}</b></span>
                             <span>· Сдали: <b className="text-foreground">{filtered.filter(r => r.submission_id).length}</b></span>
-                            {filtered.some(r => r.total != null) && (
+                            {reviewedCount > 0 && (
                                 <span>· Ср. балл: <b className="text-foreground">
-                                    {(filtered.filter(r => r.total != null).reduce((s, r) => s + (r.total ?? 0), 0) /
-                                        filtered.filter(r => r.total != null).length).toFixed(1)}
+                                    {(defenseRows.filter(r => r.total != null).reduce((s, r) => s + (r.total ?? 0), 0) / reviewedCount).toFixed(1)}
                                 </b> / {maxTotal}</span>
                             )}
                         </div>
@@ -264,19 +311,24 @@ export const AdminCourseWorksPage: React.FC = () => {
                                     </tr>
                                     </thead>
                                     <tbody>
-                                    {filtered.map((row, idx) => {
+                                    {filtered.map((row) => {
                                         const pct = row.total != null && maxTotal > 0 ? (row.total / maxTotal) * 100 : null;
                                         return (
-                                            <tr key={row.group_id} className={`border-b border-border hover:bg-muted/30 transition-colors ${!row.submission_id ? 'opacity-60' : ''}`}>
+                                            <tr key={row.group_id} className={`border-b border-border hover:bg-muted/30 transition-colors ${!row.submission_id ? 'opacity-70' : ''}`}>
                                                 <td className="px-4 py-3 sticky left-0 bg-card hover:bg-muted/30">
                                                     <div className="font-semibold text-foreground text-sm leading-tight">{row.group_title}</div>
                                                     {!row.submission_id && (
                                                         <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full font-medium mt-1 inline-block">Не сдано</span>
                                                     )}
-                                                    {row.submission_id && (
+                                                    {row.submission_id && row.total === null && (
+                                                        <span className="text-[10px] text-yellow-600 bg-yellow-50 px-1.5 py-0.5 rounded-full font-medium mt-1 inline-block flex items-center gap-0.5 w-fit">
+                                                            На проверке
+                                                        </span>
+                                                    )}
+                                                    {row.submission_id && row.total !== null && (
                                                         <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full font-medium mt-1 inline-block flex items-center gap-0.5 w-fit">
-                                                                <CheckCircle className="size-2.5" /> Сдано
-                                                            </span>
+                                                            <CheckCircle className="size-2.5" /> Проверено
+                                                        </span>
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs text-muted-foreground">{row.members || '—'}</td>
@@ -288,11 +340,11 @@ export const AdminCourseWorksPage: React.FC = () => {
                                                         <td key={c.id} className="px-2 py-3 text-center">
                                                             {filled ? (
                                                                 <span className={`inline-flex items-center justify-center w-9 h-7 rounded-lg text-sm font-bold
-                                                                        ${pts === c.max_points ? 'bg-emerald-100 text-emerald-700' :
+                                                                    ${pts === c.max_points ? 'bg-emerald-100 text-emerald-700' :
                                                                     pts === 0 ? 'bg-red-50 text-red-500' :
                                                                         'bg-blue-50 text-blue-700'}`}>
-                                                                        {pts}
-                                                                    </span>
+                                                                    {pts}
+                                                                </span>
                                                             ) : <span className="text-muted-foreground/40 text-xs">—</span>}
                                                         </td>
                                                     );

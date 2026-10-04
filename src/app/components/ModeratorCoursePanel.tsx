@@ -152,11 +152,15 @@ export const ModeratorCoursePanel: React.FC<ModeratorCoursePanelProps> = ({ cour
         hearing_stage: lesson.hearing_stage ?? '',
       });
       const existing = lessonCriteriaMap.get(lesson.id) ?? [];
+      const confDefaultPanel = lesson.hearing_stage === 'CONFERENCE_DEFENSE' && existing.length === 0
+          ? ([{"name": "Актуальность выбранной проблемы", "description": "Актуальность и значимость выбранной проблемы, наличие вариантов эффективного решения.", "max_points": 3}, {"name": "Логичность и полнота представленных материалов", "description": "Содержательность, информативность, глубина проработки темы, логическая завершённость.", "max_points": 4}, {"name": "Практическая реализуемость работы", "description": "Результаты работы имеют практическое значение и могут быть применены.", "max_points": 6}, {"name": "Внедрение в практику", "description": "Степень внедрения: наличие опытного образца, рабочей модели, апробация на целевой аудитории.", "max_points": 5}, {"name": "Обоснование использованных методов", "description": "Обоснование выбора методов исследования, технологий, применения современного оборудования.", "max_points": 3}, {"name": "Применение практических навыков", "description": "Изобретательность, техническая сложность, оригинальность, завершённость, качество выполнения.", "max_points": 5}, {"name": "Самостоятельность выполнения работы", "description": "Соответствие уровня материала уровню понимания на защите. Личный вклад участников.", "max_points": 4}, {"name": "Умение аргументировать заключения и выводы", "description": "Аргументированность выводов, опора на факты и теоретическую базу.", "max_points": 4}, {"name": "Умение отвечать на вопросы", "description": "Чёткость и обоснованность ответов с использованием принятой терминологии.", "max_points": 4}, {"name": "Культура публичного выступления", "description": "Логика, грамотность изложения, ораторское мастерство, эмоциональность, внешний вид.", "max_points": 3}, {"name": "Качество презентационных материалов", "description": "Аккуратность, эстетика оформления, отсутствие грамматических ошибок.", "max_points": 3}, {"name": "Наличие отзыва вуза/предприятия-партнёра", "description": "Наличие отзыва, указывающего на полученный результат и дальнейшее развитие работы.", "max_points": 1}] as Array<{name:string;description:string;max_points:number}>)
+          : null;
       setLessonCriteriaFormInline(
           existing.length > 0
               ? existing.map(c => ({ name: c.name, description: c.description ?? '', max_points: c.max_points }))
-              : [],
+              : confDefaultPanel ?? [],
       );
+      if (confDefaultPanel) setLessonForm(f => ({ ...f, max_score: 45 }));
     } else {
       setEditingLesson(null);
       setLessonForm({
@@ -370,7 +374,7 @@ export const ModeratorCoursePanel: React.FC<ModeratorCoursePanelProps> = ({ cour
     setSubmitting(true);
     try {
       const grades: CriterionScoreInput[] = currentCriteria.map(c => ({ criterion_id: c.id, points: reviewCriteriaScores[c.id] ?? 0 }));
-      await coursesApi.gradeSubmission(reviewModal.id, grades, reviewComment || undefined);
+      await coursesApi.gradeSubmission(reviewModal.id, grades, reviewComment || undefined, reviewStatus);
       toast.success('Оценка сохранена');
       setReviewModal(null);
       setReviewComment('');
@@ -833,6 +837,72 @@ export const ModeratorCoursePanel: React.FC<ModeratorCoursePanelProps> = ({ cour
                       value={lessonForm.hearing_stage}
                       onChange={(e) => {
                         const stage = e.target.value as import('../api/courses').HearingStage | '';
+                        // При выборе CONFERENCE_DEFENSE автоматически подставляем 12 критериев МосПолитех
+                        if (stage === 'CONFERENCE_DEFENSE' && lessonCriteriaFormInline.length === 0) {
+                          setLessonCriteriaFormInline([
+                            {
+                              name: "Актуальность выбранной проблемы",
+                              description: "Актуальность и значимость выбранной проблемы, наличие вариантов эффективного решения.",
+                              max_points: 3
+                            },
+                            {
+                              name: "Логичность и полнота представленных материалов",
+                              description: "Содержательность, информативность, глубина проработки темы, логическая завершённость.",
+                              max_points: 4
+                            },
+                            {
+                              name: "Практическая реализуемость работы",
+                              description: "Результаты работы имеют практическое значение и могут быть применены.",
+                              max_points: 6
+                            },
+                            {
+                              name: "Внедрение в практику",
+                              description: "Степень внедрения: наличие опытного образца, рабочей модели, апробация на целевой аудитории.",
+                              max_points: 5
+                            },
+                            {
+                              name: "Обоснование использованных методов",
+                              description: "Обоснование выбора методов исследования, технологий, применения современного оборудования.",
+                              max_points: 3
+                            },
+                            {
+                              name: "Применение практических навыков",
+                              description: "Изобретательность, техническая сложность, оригинальность, завершённость, качество выполнения.",
+                              max_points: 5
+                            },
+                            {
+                              name: "Самостоятельность выполнения работы",
+                              description: "Соответствие уровня материала уровню понимания на защите. Личный вклад участников.",
+                              max_points: 4
+                            },
+                            {
+                              name: "Умение аргументировать заключения и выводы",
+                              description: "Аргументированность выводов, опора на факты и теоретическую базу.",
+                              max_points: 4
+                            },
+                            {
+                              name: "Умение отвечать на вопросы",
+                              description: "Чёткость и обоснованность ответов с использованием принятой терминологии.",
+                              max_points: 4
+                            },
+                            {
+                              name: "Культура публичного выступления",
+                              description: "Логика, грамотность изложения, ораторское мастерство, эмоциональность, внешний вид.",
+                              max_points: 3
+                            },
+                            {
+                              name: "Качество презентационных материалов",
+                              description: "Аккуратность, эстетика оформления, отсутствие грамматических ошибок.",
+                              max_points: 3
+                            },
+                            {
+                              name: "Наличие отзыва вуза/предприятия-партнёра",
+                              description: "Наличие отзыва, указывающего на полученный результат и дальнейшее развитие работы.",
+                              max_points: 1
+                            }
+                          ]);
+                          setLessonForm(f => ({ ...f, max_score: 45 }));
+                        }
                         setLessonForm(f => ({
                           ...f,
                           hearing_stage: stage,
@@ -1229,39 +1299,68 @@ export const ModeratorCoursePanel: React.FC<ModeratorCoursePanelProps> = ({ cour
                   </div>
                 </div>
             ) : currentCriteria.length > 0 ? (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-2">Оценка по критериям</label>
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {currentCriteria.map(c => {
-                      const pts = reviewCriteriaScores[c.id] ?? 0;
-                      return (
-                          <div key={c.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-slate-700">{c.order_number}. {c.name}</p>
-                              {c.description && <p className="text-xs text-slate-400 mt-0.5">{c.description}</p>}
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <input
-                                  type="range"
-                                  min={0}
-                                  max={c.max_points}
-                                  value={pts}
-                                  onChange={e => setReviewCriteriaScores(prev => ({ ...prev, [c.id]: Number(e.target.value) }))}
-                                  className="w-20 accent-blue-600"
-                              />
-                              <span className="text-sm font-bold w-12 text-center rounded-lg py-0.5 text-blue-700 bg-blue-50">
-                          {pts}/{c.max_points}
-                        </span>
-                            </div>
-                          </div>
-                      );
-                    })}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Статус</label>
+                    <div className="flex gap-2">
+                      <button
+                          onClick={() => setReviewStatus('ACCEPTED')}
+                          className={`flex-1 py-2 text-sm font-semibold rounded-xl border transition-all ${
+                              reviewStatus === 'ACCEPTED'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                          }`}
+                          type="button"
+                      >
+                        Принять
+                      </button>
+                      <button
+                          onClick={() => setReviewStatus('NEEDS_REVISION')}
+                          className={`flex-1 py-2 text-sm font-semibold rounded-xl border transition-all ${
+                              reviewStatus === 'NEEDS_REVISION'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                          }`}
+                          type="button"
+                      >
+                        На доработку
+                      </button>
+                    </div>
                   </div>
-                  <div className="mt-3 flex items-center justify-between px-3 py-2 bg-blue-50 rounded-xl border border-blue-100">
-                    <span className="text-sm font-semibold text-blue-700">Итого</span>
-                    <span className="text-sm font-bold text-blue-800">
-                  {Object.values(reviewCriteriaScores).reduce((s, v) => s + v, 0)}/{currentCriteria.reduce((s, c) => s + c.max_points, 0)}
-                </span>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-2">Оценка по критериям</label>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {currentCriteria.map(c => {
+                        const pts = reviewCriteriaScores[c.id] ?? 0;
+                        return (
+                            <div key={c.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-slate-700">{c.order_number}. {c.name}</p>
+                                {c.description && <p className="text-xs text-slate-400 mt-0.5">{c.description}</p>}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <input
+                                    type="range"
+                                    min={0}
+                                    max={c.max_points}
+                                    value={pts}
+                                    onChange={e => setReviewCriteriaScores(prev => ({ ...prev, [c.id]: Number(e.target.value) }))}
+                                    className="w-20 accent-blue-600"
+                                />
+                                <span className="text-sm font-bold w-12 text-center rounded-lg py-0.5 text-blue-700 bg-blue-50">
+                            {pts}/{c.max_points}
+                          </span>
+                              </div>
+                            </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-3 flex items-center justify-between px-3 py-2 bg-blue-50 rounded-xl border border-blue-100">
+                      <span className="text-sm font-semibold text-blue-700">Итого</span>
+                      <span className="text-sm font-bold text-blue-800">
+                    {Object.values(reviewCriteriaScores).reduce((s, v) => s + v, 0)}/{currentCriteria.reduce((s, c) => s + c.max_points, 0)}
+                  </span>
+                    </div>
                   </div>
                 </div>
             ) : (
